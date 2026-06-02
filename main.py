@@ -22,14 +22,12 @@ with open('vegetables.json', 'r', encoding='utf8') as f:
 
 async def set_page(user_id, action):
     state = dict(await bot.state_dispenser.get(user_id))
-    page = state['payload']['page'] + action
+    payload = state['payload']
+    payload['page'] += action
     await bot.state_dispenser.set(user_id,
                                   SuperStates.ORDERING,
-                                  pizzeria=None,
-                                  current_product=None,
-                                  cart={i: 0 for i in veg},
-                                  page=page)
-    return page
+                                  **payload)
+    return payload['page']
 
 
 def build_keyboard(page):
@@ -50,6 +48,18 @@ def build_keyboard(page):
                   color=KeyboardButtonColor.PRIMARY) \
         if end < len(piz) else None
     return pizzerias.get_json()
+
+
+def build_vegetable_keyboard():
+    vegetables = Keyboard(inline=True)
+    for index, vegetable in enumerate(veg, 1):
+        vegetables.add(
+            Callback(vegetable, payload={'cmd': 'choice_of_vegetable', 'vegetable': vegetable}),
+            color=KeyboardButtonColor.POSITIVE
+        )
+        if not index % 2:
+            vegetables.row()
+    return vegetables.get_json()
 
 
 async def render_pizzeria_menu(user_id, action=0, event=None):
@@ -76,6 +86,41 @@ async def pagination(event):
 
 @bot.on.raw_event(GroupEventType.MESSAGE_EVENT,
                   MessageEvent,
+                  PayloadContainsRule({'cmd': 'choice_of_vegetable'}))
+async def quantity(event):
+    state = dict(await bot.state_dispenser.get(event.object.peer_id))
+    payload = state['payload']
+    payload['current_product'] = event.object.payload['vegetable']
+    await bot.state_dispenser.set(event.object.peer_id,
+                                  SuperStates.ORDERING,
+                                  **payload)
+    await replace_message(event, 'Введите количество в килограммах, например - 10, 5.5, 0.1', None)
+
+
+async def send_vegetables(peer_id):
+    keyboard = build_vegetable_keyboard()
+    await bot.api.messages.send(peer_id=peer_id,
+                                random_id=0,
+                                message='Выберите товар',
+                                keyboard=keyboard)
+
+
+async def render_cart(payload, event=None, peer_id=None):
+    keyboard = (Keyboard(inline=True)
+                .add(Text('Отправить заказ'), color=KeyboardButtonColor.SECONDARY))
+    text = f'Заказ для {payload["pizzeria"]}:\n\n'
+    text += '\n'.join([f'{key} - {value} кг' for key, value in payload['cart'].items()])
+    if event:
+        await replace_message(event, text, keyboard)
+    else:
+        await bot.api.messages.send(peer_id=peer_id,
+                                    message=text,
+                                    keyboard=keyboard,
+                                    random_id=0)
+
+
+@bot.on.raw_event(GroupEventType.MESSAGE_EVENT,
+                  MessageEvent,
                   PayloadContainsRule({'cmd': 'ordering'}))
 async def send_cart(event):
     state = dict(await bot.state_dispenser.get(event.object.peer_id))
@@ -84,11 +129,8 @@ async def send_cart(event):
     await bot.state_dispenser.set(event.object.peer_id,
                                   SuperStates.ORDERING,
                                   **payload)
-    keyboard = (Keyboard(inline=True)
-                .add(Text('Отправить заказ'), color=KeyboardButtonColor.SECONDARY))
-    text = f'Заказ для {event.object.payload["pizzeria"]}:\n\n'
-    text += '\n'.join([f'{key} - {value} кг' for key, value in payload['cart'].items()])
-    await replace_message(event, text, keyboard)
+    await render_cart(payload, event)
+    await send_vegetables(event.object.peer_id)
 
 
 async def replace_message(event, text, keyboard):
@@ -99,6 +141,20 @@ async def replace_message(event, text, keyboard):
                                 message=text,
                                 random_id=0,
                                 keyboard=keyboard)
+
+
+@bot.on.message(regex=r"^\d+(?:[.,]\d+)?$", state=SuperStates.ORDERING)
+async def quantity_handler(message):
+    quant = round(float(message.text.replace(',', '.')), 1)
+    state = dict(await bot.state_dispenser.get(message.peer_id))
+    payload = state['payload']
+    payload['cart'][payload['current_product']] = quant
+    payload['current_product'] = None
+    await bot.state_dispenser.set(message.peer_id,
+                                  SuperStates.ORDERING,
+                                  **payload)
+    await render_cart(payload, peer_id=message.peer_id)
+    await send_vegetables(message.peer_id)
 
 
 @bot.on.message(fuzzy=['новый заказ'])
