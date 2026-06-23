@@ -4,6 +4,7 @@ from vkbottle import BaseStateGroup, GroupEventType, GroupTypes
 from vkbottle import Keyboard, KeyboardButtonColor, Text, Callback
 from vkbottle.dispatch.rules.base import PayloadContainsRule
 import json
+from config import TOKEN
 
 bot = Bot(token=TOKEN)
 
@@ -12,9 +13,10 @@ class SuperStates(BaseStateGroup):
     START_STATE = 'S'
     ORDERING = 'O'
 
-
-with open('adress.json', 'r', encoding='utf8') as f:
-    piz = json.load(f)
+def read_pizzeria():
+    with open('adress.json', 'r', encoding='utf8') as f:
+        piz = json.load(f)
+        return piz
 
 with open('vegetables.json', 'r', encoding='utf8') as f:
     veg = json.load(f)
@@ -34,7 +36,7 @@ def build_keyboard(page):
     pizzerias = Keyboard(inline=True)
     start = page * 5
     end = start + 5
-    for adress in piz[start:end]:
+    for adress in read_pizzeria()[start:end]:
         pizzerias.add(
             Callback(adress, payload={'cmd': 'ordering',
                                       'pizzeria': adress}),
@@ -46,7 +48,7 @@ def build_keyboard(page):
         if page else None
     pizzerias.add(Callback('⏩', payload={'cmd': 'choice_of_pizzeria', 'action': 1}),
                   color=KeyboardButtonColor.PRIMARY) \
-        if end < len(piz) else None
+        if end < len(read_pizzeria()) else None
     return pizzerias.get_json()
 
 
@@ -105,17 +107,38 @@ async def send_vegetables(peer_id):
                                 keyboard=keyboard)
 
 
+@bot.on.raw_event(GroupEventType.MESSAGE_EVENT,
+                  MessageEvent,
+                  PayloadContainsRule({'cmd': 'send_order'}))
+async def send_order(event):
+    await event.ctx_api.messages.send_message_event_answer(
+        event_id=event.object.event_id,
+        user_id=event.object.user_id,
+        peer_id=event.object.peer_id
+    )
+    await event.ctx_api.messages.delete(peer_id=event.object.peer_id,
+                                        cmids=event.object.conversation_message_id + 1,
+                                        delete_for_all=True)
+    await bot.api.messages.send(peer_id=event.peer_id,
+                                random_id=0,
+                                message='Ваш заказ отправлен на согласование')
+
+
+
 async def render_cart(payload, event=None, peer_id=None):
+    print(payload['cart'])
     keyboard = (Keyboard(inline=True)
-                .add(Text('Отправить заказ'), color=KeyboardButtonColor.SECONDARY))
+                .add(Callback('Отправить заказ',
+                              payload={'cmd': 'send_order', 'cart': 0}),
+                     color=KeyboardButtonColor.SECONDARY))
     text = f'Заказ для {payload["pizzeria"]}:\n\n'
     text += '\n'.join([f'{key} - {value} кг' for key, value in payload['cart'].items()])
     if event:
-        await replace_message(event, text, keyboard)
+        await replace_message(event, text, keyboard.get_json())
     else:
         await bot.api.messages.send(peer_id=peer_id,
                                     message=text,
-                                    keyboard=keyboard,
+                                    keyboard=keyboard.get_json(),
                                     random_id=0)
 
 
