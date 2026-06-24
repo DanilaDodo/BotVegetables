@@ -4,9 +4,10 @@ from vkbottle import BaseStateGroup, GroupEventType, GroupTypes
 from vkbottle import Keyboard, KeyboardButtonColor, Text, Callback
 from vkbottle.dispatch.rules.base import PayloadContainsRule
 import json
-from config import TOKEN
+from config import TOKEN, ADMIN
 
 bot = Bot(token=TOKEN)
+adm = ADMIN
 
 
 class SuperStates(BaseStateGroup):
@@ -211,14 +212,14 @@ async def create_handler(message):
     await bot.state_dispenser.delete(message.peer_id)
 
 
-@bot.on.message(text=['удалить точку', 'Удалить точку'])
+@bot.on.message(text=['удалить точку', 'Удалить точку'], peer_ids=adm)
 async def delete_pizzeria(message):
     await message.answer('Введите адрес точки для удаления')
     await bot.state_dispenser.set(message.peer_id,
                                   SuperStates.DELETE)
 
 
-@bot.on.message(text=['создать точку', 'Создать точку'])
+@bot.on.message(text=['создать точку', 'Создать точку'], peer_ids=adm)
 async def create_pizzeria(message):
     await message.answer('Введите адрес точки для добавления')
     await bot.state_dispenser.set(message.peer_id,
