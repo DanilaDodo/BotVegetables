@@ -12,11 +12,21 @@ bot = Bot(token=TOKEN)
 class SuperStates(BaseStateGroup):
     START_STATE = 'S'
     ORDERING = 'O'
+    CREATE = "C"
+    DELETE = "D"
 
 def read_pizzeria():
     with open('adress.json', 'r', encoding='utf8') as f:
         piz = json.load(f)
-        return piz
+        return list(piz.values())
+
+def write_pizzeria(pizzeria):
+    out = {}
+    for index, adress in enumerate(pizzeria):
+        out[index] = adress
+    with open('adress.json', 'w', encoding='utf8') as f:
+        json.dump(out, f, ensure_ascii=False, indent=4)
+
 
 with open('vegetables.json', 'r', encoding='utf8') as f:
     veg = json.load(f)
@@ -126,7 +136,6 @@ async def send_order(event):
 
 
 async def render_cart(payload, event=None, peer_id=None):
-    print(payload['cart'])
     keyboard = (Keyboard(inline=True)
                 .add(Callback('Отправить заказ',
                               payload={'cmd': 'send_order', 'cart': 0}),
@@ -179,6 +188,41 @@ async def quantity_handler(message):
     await render_cart(payload, peer_id=message.peer_id)
     await send_vegetables(message.peer_id)
 
+
+@bot.on.message(state=SuperStates.DELETE)
+async def create_handler(message):
+    piz = read_pizzeria()
+    if message.text in piz:
+        piz.remove(message.text)
+        write_pizzeria(piz)
+        await message.answer(f'Пиццерия по адресу {message.text} успешно удалена')
+        await bot.state_dispenser.delete(message.peer_id)
+    else:
+        await message.answer(f'Пиццерия по адресу {message.text} не найдена.\nОтправьте адрес заново')
+
+
+@bot.on.message(state=SuperStates.CREATE)
+async def create_handler(message):
+    piz = read_pizzeria()
+    piz.append(message.text)
+    piz.sort()
+    write_pizzeria(piz)
+    await message.answer(f'Пиццерия по адресу {message.text} успешно добавлена')
+    await bot.state_dispenser.delete(message.peer_id)
+
+
+@bot.on.message(text=['удалить точку', 'Удалить точку'])
+async def delete_pizzeria(message):
+    await message.answer('Введите адрес точки для удаления')
+    await bot.state_dispenser.set(message.peer_id,
+                                  SuperStates.DELETE)
+
+
+@bot.on.message(text=['создать точку', 'Создать точку'])
+async def create_pizzeria(message):
+    await message.answer('Введите адрес точки для добавления')
+    await bot.state_dispenser.set(message.peer_id,
+                                  SuperStates.CREATE)
 
 @bot.on.message(fuzzy=['новый заказ'])
 async def choice_of_pizzeria(message):
