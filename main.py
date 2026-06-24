@@ -19,7 +19,7 @@ class SuperStates(BaseStateGroup):
 def read_pizzeria():
     with open('adress.json', 'r', encoding='utf8') as f:
         piz = json.load(f)
-        return list(piz.values())
+    return list(piz.values())
 
 def write_pizzeria(pizzeria):
     out = {}
@@ -29,9 +29,33 @@ def write_pizzeria(pizzeria):
         json.dump(out, f, ensure_ascii=False, indent=4)
 
 
+def read_order():
+    with open('orders.json', 'r', encoding='utf8') as f:
+        ord = json.load(f)
+    return ord
+
+
+def write_order(ord):
+    with open('orders.json', 'w', encoding='utf8') as f:
+        json.dump(ord, f, ensure_ascii=False, indent=4)
+
+
+def order_text(cart):
+    return '\n'.join([f'{key} - {value} кг' for key, value in cart.items()])
+
+
 with open('vegetables.json', 'r', encoding='utf8') as f:
     veg = json.load(f)
 
+
+async def data_for_order(event):
+    state = dict(await bot.state_dispenser.get(event.object.peer_id))
+    payload = state['payload']
+    payload.pop('page', None)
+    payload.pop('current_product', None)
+    payload['user_id'] = event.object.user_id
+    payload['status'] = 'pending'
+    return payload
 
 async def set_page(user_id, action):
     state = dict(await bot.state_dispenser.get(user_id))
@@ -73,6 +97,19 @@ def build_vegetable_keyboard():
         if not index % 2:
             vegetables.row()
     return vegetables.get_json()
+
+
+def build_approve_keyboard(order_id):
+    approve = Keyboard(inline=True)
+    approve.add(
+        Callback("✅ Принять", payload={'cmd': 'approve_order', 'order_id': order_id}),
+        color=KeyboardButtonColor.POSITIVE
+    )
+    approve.add(
+        Callback("❌ Отклонить", payload={'cmd': 'decline_order', 'order_id': order_id}),
+        color=KeyboardButtonColor.NEGATIVE
+    )
+    return approve
 
 
 async def render_pizzeria_menu(user_id, action=0, event=None):
@@ -118,6 +155,17 @@ async def send_vegetables(peer_id):
                                 keyboard=keyboard)
 
 
+async def send_to_adm(order_id, payload):
+    keyboard = build_approve_keyboard(order_id)
+    cart = order_text(payload['cart'])
+    for user_id in adm:
+        await bot.api.messages.send(peer_id=user_id,
+                                    random_id=0,
+                                    message=f'''Новый заказ для {payload["pizzeria"]}\n
+{cart}''',
+                                    keyboard=keyboard)
+
+
 @bot.on.raw_event(GroupEventType.MESSAGE_EVENT,
                   MessageEvent,
                   PayloadContainsRule({'cmd': 'send_order'}))
@@ -130,19 +178,26 @@ async def send_order(event):
     await event.ctx_api.messages.delete(peer_id=event.object.peer_id,
                                         cmids=event.object.conversation_message_id + 1,
                                         delete_for_all=True)
+    payload = await data_for_order(event)
+    ord = read_order()
+    order_id = int(list(ord.keys())[-1]) + 1 if list(ord.keys()) else 0
+    ord[order_id] = payload
+    write_order(ord)
+    await send_to_adm(order_id, payload)
     await bot.api.messages.send(peer_id=event.peer_id,
                                 random_id=0,
                                 message='Ваш заказ отправлен на согласование')
 
 
 
+
 async def render_cart(payload, event=None, peer_id=None):
     keyboard = (Keyboard(inline=True)
                 .add(Callback('Отправить заказ',
-                              payload={'cmd': 'send_order', 'cart': 0}),
+                              payload={'cmd': 'send_order', 'cart': list(payload['cart'].items())}),
                      color=KeyboardButtonColor.SECONDARY))
     text = f'Заказ для {payload["pizzeria"]}:\n\n'
-    text += '\n'.join([f'{key} - {value} кг' for key, value in payload['cart'].items()])
+    text += order_text(payload['cart'])
     if event:
         await replace_message(event, text, keyboard.get_json())
     else:
