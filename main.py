@@ -168,7 +168,8 @@ async def send_to_adm(order_id, payload):
     for user_id in adm:
         await bot.api.messages.send(peer_id=user_id,
                                     random_id=0,
-                                    message=f'''Новый заказ для {payload["pizzeria"]}\n
+                                    message=f'''Новый заказ для {payload["pizzeria"]}
+[id{payload["user_id"]}|Связаться]
 {cart}''',
                                     keyboard=keyboard)
 
@@ -292,6 +293,27 @@ async def create_handler(message):
     write_pizzeria(piz)
     await message.answer(f'Пиццерия по адресу {message.text} успешно добавлена')
     await bot.state_dispenser.delete(message.peer_id)
+
+
+@bot.on.message(text=['показать сводку', 'Показать сводку'], peer_ids=adm)
+async def show_stat(message):
+    order = read_order()
+    total = {i: 0 for i in veg}
+    total_text = "ИТОГО:\n"
+    text = ""
+    for i in order:
+        if order[i]['status'] == 'approve':
+            text += order[i]['pizzeria'] + ':\n'
+            for j in order[i]['cart']:
+                text += j + ' - ' + str(order[i]['cart'][j]) + ' кг\n'
+                total[j] += order[i]['cart'][j]
+            text += '\n'
+    if not text:
+        text = 'Сводка пуста'
+    await message.answer(text)
+    for i in total:
+        total_text += i + ' - ' + str(total[i]) + ' кг\n'
+    await message.answer(total_text)
 
 
 @bot.on.message(text=['удалить точку', 'Удалить точку'], peer_ids=adm)
