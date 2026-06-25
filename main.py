@@ -147,6 +147,13 @@ async def quantity(event):
     await replace_message(event, 'Введите количество в килограммах, например - 10, 5.5, 0.1', None)
 
 
+async def check_replaced(order, pizzeria):
+    for ord in order:
+        if order[ord]['pizzeria'] == pizzeria:
+            order[ord]['status'] = 'replaced'
+    return order
+
+
 async def send_vegetables(peer_id):
     keyboard = build_vegetable_keyboard()
     await bot.api.messages.send(peer_id=peer_id,
@@ -180,6 +187,7 @@ async def send_order(event):
                                         delete_for_all=True)
     payload = await data_for_order(event)
     ord = read_order()
+    ord = await check_replaced(ord, payload['pizzeria'])
     order_id = int(list(ord.keys())[-1]) + 1 if list(ord.keys()) else 0
     ord[order_id] = payload
     write_order(ord)
@@ -187,8 +195,6 @@ async def send_order(event):
     await bot.api.messages.send(peer_id=event.peer_id,
                                 random_id=0,
                                 message='Ваш заказ отправлен на согласование')
-
-
 
 
 async def render_cart(payload, event=None, peer_id=None):
