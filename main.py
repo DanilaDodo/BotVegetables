@@ -102,11 +102,11 @@ def build_vegetable_keyboard():
 def build_approve_keyboard(order_id):
     approve = Keyboard(inline=True)
     approve.add(
-        Callback("✅ Принять", payload={'cmd': 'approve_order', 'order_id': order_id}),
+        Callback("✅ Принять", payload={'cmd': 'approve', 'action': 'approve', 'order_id': order_id}),
         color=KeyboardButtonColor.POSITIVE
     )
     approve.add(
-        Callback("❌ Отклонить", payload={'cmd': 'decline_order', 'order_id': order_id}),
+        Callback("❌ Отклонить", payload={'cmd': 'approve', 'action': 'decline', 'order_id': order_id}),
         color=KeyboardButtonColor.NEGATIVE
     )
     return approve
@@ -205,6 +205,27 @@ async def render_cart(payload, event=None, peer_id=None):
                                     message=text,
                                     keyboard=keyboard.get_json(),
                                     random_id=0)
+
+
+@bot.on.raw_event(GroupEventType.MESSAGE_EVENT,
+                  MessageEvent,
+                  PayloadContainsRule({'cmd': 'approve'}))
+async def send_answer(event):
+    answer = 'принят' if event.object.payload['action'] == 'approve' else 'отклонен'
+    ord = read_order()
+    await bot.api.messages.send(peer_id=event.object.peer_id,
+                                message=f'Заказ для {ord[str(event.object.payload["order_id"])]["pizzeria"]} {answer}',
+                                random_id=0)
+    await bot.api.messages.send(peer_id=ord[str(event.object.payload['order_id'])]['user_id'],
+                                message=f'Ваш заказ {answer}',
+                                random_id=0)
+    ord[str(event.object.payload['order_id'])]['status'] = event.object.payload['action']
+    write_order(ord)
+    await event.ctx_api.messages.send_message_event_answer(
+        event_id=event.object.event_id,
+        user_id=event.object.user_id,
+        peer_id=event.object.peer_id
+    )
 
 
 @bot.on.raw_event(GroupEventType.MESSAGE_EVENT,
