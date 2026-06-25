@@ -295,7 +295,7 @@ async def create_handler(message):
     await bot.state_dispenser.delete(message.peer_id)
 
 
-@bot.on.message(text=['показать сводку', 'Показать сводку'], peer_ids=adm)
+@bot.on.message(fuzzy=['показать сводку'], peer_ids=adm)
 async def show_stat(message):
     order = read_order()
     total = {i: 0 for i in veg}
@@ -314,6 +314,12 @@ async def show_stat(message):
     for i in total:
         total_text += i + ' - ' + str(total[i]) + ' кг\n'
     await message.answer(total_text)
+
+
+@bot.on.message(fuzzy=['очистить сводку'], peer_ids=adm)
+async def clear_stat(message):
+    write_order({})
+    await message.answer('Сводка очищена')
 
 
 @bot.on.message(text=['удалить точку', 'Удалить точку'], peer_ids=adm)
