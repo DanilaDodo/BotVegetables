@@ -276,7 +276,7 @@ async def send_answer(event):
     )
     answer = 'принят' if event.object.payload['action'] == 'approve' else 'отклонен'
     ord = read_order()
-    if ord[str(event.object.payload['order_id'])]['status'] == 'pending':
+    if ord[str(event.object.payload['order_id'])]['status'] == 'pending' or str(event.object.payload['order_id']) not in ord:
         await bot.api.messages.send(peer_id=event.object.peer_id,
                                     message=f'Заказ для {ord[str(event.object.payload["order_id"])]["pizzeria"]} {answer}',
                                     random_id=0)
