@@ -48,13 +48,49 @@ with open('vegetables.json', 'r', encoding='utf8') as f:
     veg = json.load(f)
 
 
+async def is_none(event):
+    state = await bot.state_dispenser.get(event.object.peer_id)
+    await event.ctx_api.messages.send_message_event_answer(
+        event_id=event.object.event_id,
+        user_id=event.object.user_id,
+        peer_id=event.object.peer_id
+    )
+    if state is None:
+        await bot.api.messages.send(
+            peer_id=event.object.peer_id,
+            random_id=0,
+            message="Этот заказ уже устарел. Начните новый заказ."
+        )
+    return state
+
+
+async def data_vegetable(event):
+    payload = await is_none(event)
+    if payload is not None:
+        payload = dict(payload)
+        payload = payload['payload']
+        payload['current_product'] = event.object.payload['vegetable']
+    return payload
+
+
+async def data_pizzeria(event):
+    payload = await is_none(event)
+    if payload is not None:
+        payload = dict(payload)
+        payload = payload['payload']
+        payload['pizzeria'] = event.object.payload['pizzeria']
+    return payload
+
+
 async def data_for_order(event):
-    state = dict(await bot.state_dispenser.get(event.object.peer_id))
-    payload = state['payload']
-    payload.pop('page', None)
-    payload.pop('current_product', None)
-    payload['user_id'] = event.object.user_id
-    payload['status'] = 'pending'
+    payload = await is_none(event)
+    if payload is not None:
+        payload = dict(payload)
+        payload = payload['payload']
+        payload.pop('page', None)
+        payload.pop('current_product', None)
+        payload['user_id'] = event.object.user_id
+        payload['status'] = 'pending'
     return payload
 
 async def set_page(user_id, action):
@@ -138,13 +174,12 @@ async def pagination(event):
                   MessageEvent,
                   PayloadContainsRule({'cmd': 'choice_of_vegetable'}))
 async def quantity(event):
-    state = dict(await bot.state_dispenser.get(event.object.peer_id))
-    payload = state['payload']
-    payload['current_product'] = event.object.payload['vegetable']
-    await bot.state_dispenser.set(event.object.peer_id,
-                                  SuperStates.ORDERING,
-                                  **payload)
-    await replace_message(event, 'Введите количество в килограммах, например - 10, 5.5, 0.1', None)
+    payload = await data_vegetable(event)
+    if payload is not None:
+        await bot.state_dispenser.set(event.object.peer_id,
+                                      SuperStates.ORDERING,
+                                      **payload)
+        await replace_message(event, 'Введите количество в килограммах, например - 10, 5.5, 0.1', None)
 
 
 async def check_replaced(order, pizzeria):
@@ -178,24 +213,20 @@ async def send_to_adm(order_id, payload):
                   MessageEvent,
                   PayloadContainsRule({'cmd': 'send_order'}))
 async def send_order(event):
-    await event.ctx_api.messages.send_message_event_answer(
-        event_id=event.object.event_id,
-        user_id=event.object.user_id,
-        peer_id=event.object.peer_id
-    )
-    await event.ctx_api.messages.delete(peer_id=event.object.peer_id,
-                                        cmids=event.object.conversation_message_id + 1,
-                                        delete_for_all=True)
     payload = await data_for_order(event)
-    ord = read_order()
-    ord = await check_replaced(ord, payload['pizzeria'])
-    order_id = int(list(ord.keys())[-1]) + 1 if list(ord.keys()) else 0
-    ord[order_id] = payload
-    write_order(ord)
-    await send_to_adm(order_id, payload)
-    await bot.api.messages.send(peer_id=event.peer_id,
-                                random_id=0,
-                                message='Ваш заказ отправлен на согласование')
+    if payload is not None:
+        await event.ctx_api.messages.delete(peer_id=event.object.peer_id,
+                                            cmids=event.object.conversation_message_id + 1,
+                                            delete_for_all=True)
+        ord = read_order()
+        ord = await check_replaced(ord, payload['pizzeria'])
+        order_id = int(list(ord.keys())[-1]) + 1 if list(ord.keys()) else 0
+        ord[order_id] = payload
+        write_order(ord)
+        await send_to_adm(order_id, payload)
+        await bot.api.messages.send(peer_id=event.object.peer_id,
+                                    random_id=0,
+                                    message='Ваш заказ отправлен на согласование')
 
 
 async def render_cart(payload, event=None, peer_id=None):
@@ -239,14 +270,13 @@ async def send_answer(event):
                   MessageEvent,
                   PayloadContainsRule({'cmd': 'ordering'}))
 async def send_cart(event):
-    state = dict(await bot.state_dispenser.get(event.object.peer_id))
-    payload = state['payload']
-    payload['pizzeria'] = event.object.payload['pizzeria']
-    await bot.state_dispenser.set(event.object.peer_id,
-                                  SuperStates.ORDERING,
-                                  **payload)
-    await render_cart(payload, event)
-    await send_vegetables(event.object.peer_id)
+    payload = await data_pizzeria(event)
+    if payload is not None:
+        await bot.state_dispenser.set(event.object.peer_id,
+                                      SuperStates.ORDERING,
+                                      **payload)
+        await render_cart(payload, event)
+        await send_vegetables(event.object.peer_id)
 
 
 async def replace_message(event, text, keyboard):
@@ -274,7 +304,7 @@ async def quantity_handler(message):
 
 
 @bot.on.message(state=SuperStates.DELETE)
-async def create_handler(message):
+async def delete_handler(message):
     piz = read_pizzeria()
     if message.text in piz:
         piz.remove(message.text)
