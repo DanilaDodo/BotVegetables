@@ -189,7 +189,7 @@ async def quantity(event):
 
 async def check_replaced(order, pizzeria):
     for ord in order:
-        if order[ord]['pizzeria'] == pizzeria:
+        if order[ord]['pizzeria'] == pizzeria and order[ord]['status'] != 'history':
             order[ord]['status'] = 'replaced'
     return order
 
@@ -229,7 +229,6 @@ async def send_order(event):
         ord[order_id] = payload
         write_order(ord)
         await send_to_adm(order_id, payload)
-        print(payload)
         try:
             await bot.api.messages.send(peer_id=payload['user_id'],
                                         message='Ваш заказ отправлен на согласование',
@@ -268,19 +267,24 @@ async def send_answer(event):
     )
     answer = 'принят' if event.object.payload['action'] == 'approve' else 'отклонен'
     ord = read_order()
-    await bot.api.messages.send(peer_id=event.object.peer_id,
-                                message=f'Заказ для {ord[str(event.object.payload["order_id"])]["pizzeria"]} {answer}',
-                                random_id=0)
-    try:
-        await bot.api.messages.send(peer_id=ord[str(event.object.payload['order_id'])]['user_id'],
-                                    message=f'Ваш заказ {answer}',
-                                    random_id=0)
-    except Exception:
+    if ord[str(event.object.payload['order_id'])]['status'] == 'pending':
         await bot.api.messages.send(peer_id=event.object.peer_id,
-                                    message=f'Не удалось уведомить пользователя.\nЗаказ всё равно {answer}',
+                                    message=f'Заказ для {ord[str(event.object.payload["order_id"])]["pizzeria"]} {answer}',
                                     random_id=0)
-    ord[str(event.object.payload['order_id'])]['status'] = event.object.payload['action']
-    write_order(ord)
+        try:
+            await bot.api.messages.send(peer_id=ord[str(event.object.payload['order_id'])]['user_id'],
+                                        message=f'Ваш заказ {answer}',
+                                        random_id=0)
+        except Exception:
+            await bot.api.messages.send(peer_id=event.object.peer_id,
+                                        message=f'Не удалось уведомить пользователя.\nЗаказ всё равно {answer}',
+                                        random_id=0)
+        ord[str(event.object.payload['order_id'])]['status'] = event.object.payload['action']
+        write_order(ord)
+    else:
+        await bot.api.messages.send(peer_id=event.object.peer_id,
+                                    message=f'Заказ больше не ожидает согласования.',
+                                    random_id=0)
 
 
 @bot.on.raw_event(GroupEventType.MESSAGE_EVENT,
@@ -365,7 +369,10 @@ async def show_stat(message):
 
 @bot.on.message(fuzzy=['очистить сводку'], peer_ids=adm)
 async def clear_stat(message):
-    write_order({})
+    order = read_order()
+    for ord in order:
+        order[ord]['status'] = 'history'
+    write_order(order)
     await message.answer('Сводка очищена')
 
 
