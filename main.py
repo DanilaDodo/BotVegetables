@@ -12,14 +12,18 @@ adm = ADMIN
 
 class SuperStates(BaseStateGroup):
     START_STATE = 'S'
+    CHOICE_OF_PIZZERIA = 'COP'
     ORDERING = 'O'
-    CREATE = "C"
-    DELETE = "D"
+    ENTER_QUANTITY = 'EQ'
+    CREATE = 'C'
+    DELETE = 'D'
+
 
 def read_pizzeria():
     with open('adress.json', 'r', encoding='utf8') as f:
         piz = json.load(f)
     return list(piz.values())
+
 
 def write_pizzeria(pizzeria):
     out = {}
@@ -104,10 +108,11 @@ async def set_page(user_id, action):
 
 
 def build_keyboard(page):
+    pizzeria_list = read_pizzeria()
     pizzerias = Keyboard(inline=True)
     start = page * 5
     end = start + 5
-    for adress in read_pizzeria()[start:end]:
+    for adress in pizzeria_list[start:end]:
         pizzerias.add(
             Callback(adress, payload={'cmd': 'ordering',
                                       'pizzeria': adress}),
@@ -119,7 +124,7 @@ def build_keyboard(page):
         if page else None
     pizzerias.add(Callback('⏩', payload={'cmd': 'choice_of_pizzeria', 'action': 1}),
                   color=KeyboardButtonColor.PRIMARY) \
-        if end < len(read_pizzeria()) else None
+        if end < len(pizzeria_list) else None
     return pizzerias.get_json()
 
 
@@ -177,7 +182,7 @@ async def quantity(event):
     payload = await data_vegetable(event)
     if payload is not None:
         await bot.state_dispenser.set(event.object.peer_id,
-                                      SuperStates.ORDERING,
+                                      SuperStates.ENTER_QUANTITY,
                                       **payload)
         await replace_message(event, 'Введите количество в килограммах, например - 10, 5.5, 0.1', None)
 
@@ -224,9 +229,16 @@ async def send_order(event):
         ord[order_id] = payload
         write_order(ord)
         await send_to_adm(order_id, payload)
-        await bot.api.messages.send(peer_id=event.object.peer_id,
-                                    random_id=0,
-                                    message='Ваш заказ отправлен на согласование')
+        print(payload)
+        try:
+            await bot.api.messages.send(peer_id=payload['user_id'],
+                                        message='Ваш заказ отправлен на согласование',
+                                        random_id=0)
+        except Exception:
+            for i in adm:
+                await bot.api.messages.send(peer_id=i,
+                                            message=f'Не удалось уведомить пользователя о статусе согласования.',
+                                            random_id=0)
 
 
 async def render_cart(payload, event=None, peer_id=None):
@@ -249,21 +261,26 @@ async def render_cart(payload, event=None, peer_id=None):
                   MessageEvent,
                   PayloadContainsRule({'cmd': 'approve'}))
 async def send_answer(event):
-    answer = 'принят' if event.object.payload['action'] == 'approve' else 'отклонен'
-    ord = read_order()
-    await bot.api.messages.send(peer_id=event.object.peer_id,
-                                message=f'Заказ для {ord[str(event.object.payload["order_id"])]["pizzeria"]} {answer}',
-                                random_id=0)
-    await bot.api.messages.send(peer_id=ord[str(event.object.payload['order_id'])]['user_id'],
-                                message=f'Ваш заказ {answer}',
-                                random_id=0)
-    ord[str(event.object.payload['order_id'])]['status'] = event.object.payload['action']
-    write_order(ord)
     await event.ctx_api.messages.send_message_event_answer(
         event_id=event.object.event_id,
         user_id=event.object.user_id,
         peer_id=event.object.peer_id
     )
+    answer = 'принят' if event.object.payload['action'] == 'approve' else 'отклонен'
+    ord = read_order()
+    await bot.api.messages.send(peer_id=event.object.peer_id,
+                                message=f'Заказ для {ord[str(event.object.payload["order_id"])]["pizzeria"]} {answer}',
+                                random_id=0)
+    try:
+        await bot.api.messages.send(peer_id=ord[str(event.object.payload['order_id'])]['user_id'],
+                                    message=f'Ваш заказ {answer}',
+                                    random_id=0)
+    except Exception:
+        await bot.api.messages.send(peer_id=event.object.peer_id,
+                                    message=f'Не удалось уведомить пользователя.\nЗаказ всё равно {answer}',
+                                    random_id=0)
+    ord[str(event.object.payload['order_id'])]['status'] = event.object.payload['action']
+    write_order(ord)
 
 
 @bot.on.raw_event(GroupEventType.MESSAGE_EVENT,
@@ -289,11 +306,11 @@ async def replace_message(event, text, keyboard):
                                 keyboard=keyboard)
 
 
-@bot.on.message(regex=r"^\d+(?:[.,]\d+)?$", state=SuperStates.ORDERING)
+@bot.on.message(regex=r"^\d+(?:[.,]\d+)?$", state=SuperStates.ENTER_QUANTITY)
 async def quantity_handler(message):
-    quant = round(float(message.text.replace(',', '.')), 1)
     state = dict(await bot.state_dispenser.get(message.peer_id))
     payload = state['payload']
+    quant = round(float(message.text.replace(',', '.')), 1)
     payload['cart'][payload['current_product']] = quant
     payload['current_product'] = None
     await bot.state_dispenser.set(message.peer_id,
@@ -368,7 +385,7 @@ async def create_pizzeria(message):
 @bot.on.message(fuzzy=['новый заказ'])
 async def choice_of_pizzeria(message):
     await bot.state_dispenser.set(message.peer_id,
-                                  SuperStates.ORDERING,
+                                  SuperStates.CHOICE_OF_PIZZERIA,
                                   pizzeria=None,
                                   current_product=None,
                                   cart={i: 0 for i in veg},
