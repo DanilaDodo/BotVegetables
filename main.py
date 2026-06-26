@@ -44,6 +44,13 @@ def write_order(ord):
         json.dump(ord, f, ensure_ascii=False, indent=4)
 
 
+def prepare_json(ord):
+    while len(ord) >= 500:
+        key_to_remove = list(ord.keys())[0]
+        removed_value = ord.pop(key_to_remove)
+    return ord
+
+
 def order_text(cart):
     return '\n'.join([f'{key} - {value} кг' for key, value in cart.items()])
 
@@ -224,11 +231,13 @@ async def send_order(event):
                                             cmids=event.object.conversation_message_id + 1,
                                             delete_for_all=True)
         ord = read_order()
+        ord = prepare_json(ord)
         ord = await check_replaced(ord, payload['pizzeria'])
         order_id = int(list(ord.keys())[-1]) + 1 if list(ord.keys()) else 0
         ord[order_id] = payload
         write_order(ord)
         await send_to_adm(order_id, payload)
+        await bot.state_dispenser.delete(event.object.peer_id)
         try:
             await bot.api.messages.send(peer_id=payload['user_id'],
                                         message='Ваш заказ отправлен на согласование',
