@@ -2,3 +2,6 @@ config.py
 __pycache__/
 *.pyc
 .vkbottle/
+.vkbottle/bot-polling
+.idea
+.DS_Store
