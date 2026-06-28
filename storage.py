@@ -26,5 +26,23 @@ def write_order(ord):
         json.dump(ord, f, ensure_ascii=False, indent=4)
 
 
+def read_clients():
+    with open('data/users.json', 'r', encoding='utf8') as f:
+        clients = json.load(f)
+    return clients
+
+
+def write_clients(clients):
+    with open('data/users.json', 'w', encoding='utf8') as f:
+        json.dump(clients, f, ensure_ascii=False, indent=4)
+
+
+def save_client(user_id):
+    clients = read_clients()
+    if user_id not in clients['users']:
+        clients['users'].append(user_id)
+        write_clients(clients)
+
+
 with open('data/vegetables.json', 'r', encoding='utf8') as f:
     veg = json.load(f)

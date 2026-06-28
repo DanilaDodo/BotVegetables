@@ -1,5 +1,5 @@
 from vkbottle.dispatch.rules.base import PayloadContainsRule
-from storage import read_order, write_order, veg
+from storage import read_order, write_order, veg, save_client
 from states import SuperStates
 from loader import bot, adm
 from keyboards import build_start_keyboard
@@ -13,6 +13,7 @@ from vkbottle import GroupEventType
 
 @bot.on.message(fuzzy=['/start', 'начать'])
 async def start_handler(message):
+    save_client(message.peer_id)
     await bot.state_dispenser.set(message.peer_id,
                                   SuperStates.START_STATE,
                                   page=None)
@@ -22,6 +23,7 @@ async def start_handler(message):
 
 @bot.on.message(fuzzy=['новый заказ'])
 async def choice_of_pizzeria(message):
+    save_client(message.peer_id)
     await bot.state_dispenser.set(message.peer_id,
                                   SuperStates.CHOICE_OF_PIZZERIA,
                                   pizzeria=None,
